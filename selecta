@@ -10,12 +10,26 @@
 # If this seems confusing, don't worry. You can treat it as a normal Ruby file
 # starting with the "!ruby" shebang below.
 
-exec /usr/bin/env ruby --disable-gems -x "$0" $*
+exec /usr/bin/env ruby -x "$0" $*
 #!ruby
 
 if RUBY_VERSION < '1.9.3'
   abort "error: Selecta requires Ruby 1.9.3 or higher."
 end
+
+$f = File.open(File.join(ENV['HOME'], 'selecta.log'), 'w')
+at_exit { $f.close }
+def log(text)
+  $f.puts text
+end
+
+# require 'ruby-prof'
+# RubyProf.start
+# at_exit do
+#   result = RubyProf.stop
+#   printer = RubyProf::GraphHtmlPrinter.new(result)
+#   File.open(File.join(ENV['HOME'], 'profile.html'), 'w') { |f| printer.print(f) }
+# end
 
 require "optparse"
 require "io/console"
