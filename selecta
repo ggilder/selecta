@@ -183,13 +183,15 @@ end
 class Search
   attr_reader :choices, :index, :query, :config
 
-  def initialize(vars)
+  def initialize(vars, precomputed_matches = nil)
     @vars = vars
     @config = vars.fetch(:config)
     @choices = vars.fetch(:choices)
     @index = vars.fetch(:index)
     @query = vars.fetch(:query)
     @done = vars.fetch(:done)
+    # Accept optional precomputed matches
+    @matches = precomputed_matches
   end
 
   def self.blank(config)
@@ -204,6 +206,10 @@ class Search
     Search.new(@vars.merge(vars))
   end
 
+  def view(vars)
+    Search.new(@vars.merge(vars), @matches)
+  end
+
   def done?
     @done
   end
@@ -214,11 +220,11 @@ class Search
 
   def down
     new_index = [index + 1, matches.count - 1, config.visible_choices - 1].min
-    merge(:index => new_index)
+    view(:index => new_index)
   end
 
   def up
-    merge(:index => [index - 1, 0].max)
+    view(:index => [index - 1, 0].max)
   end
 
   def append_search_string(string)
@@ -242,7 +248,8 @@ class Search
   end
 
   def matches
-    choices.map do |choice|
+    return @matches if @matches
+    @matches = choices.map do |choice|
       [choice, Score.score(choice, query)]
     end.select do |choice, score|
       score > 0.0
@@ -250,11 +257,11 @@ class Search
       -score
     end.map do |choice, score|
       choice
-    end
+    end.freeze
   end
 
   def done
-    merge(:done => true)
+    view(:done => true)
   end
 
   class NoSelection; end
@@ -333,7 +340,7 @@ class Renderer < Struct.new(:search, :screen)
 
   def render
     search_line = "> " + search.query
-    matches = search.matches
+    matches = search.matches.dup
     unless matches.empty?
       matches[search.index] = Text[:inverse, matches.fetch(search.index), :reset]
     end
