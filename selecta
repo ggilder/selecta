@@ -23,13 +23,13 @@ def log(text)
   $f.puts text
 end
 
-# require 'ruby-prof'
-# RubyProf.start
-# at_exit do
-#   result = RubyProf.stop
-#   printer = RubyProf::GraphHtmlPrinter.new(result)
-#   File.open(File.join(ENV['HOME'], 'profile.html'), 'w') { |f| printer.print(f) }
-# end
+require 'ruby-prof'
+RubyProf.start
+at_exit do
+  result = RubyProf.stop
+  printer = RubyProf::CallStackPrinter.new(result)
+  File.open(File.join(ENV['HOME'], 'profile.html'), 'w') { |f| printer.print(f) }
+end
 
 require "optparse"
 require "io/console"
@@ -174,8 +174,11 @@ class Configuration < Struct.new(:visible_choices, :initial_search, :choices)
       # fixes this. I don't understand why. I found it via:
       #
       # http://stackoverflow.com/questions/2982677/ruby-1-9-invalid-byte-sequence-in-utf-8
+      #
+      # TODO maybe check `valid_encoding?` first to avoid conversion if unnecessary?
       utf16 = choice.encode('UTF-16', 'UTF-8', :invalid => :replace, :replace => '')
       utf16.encode('UTF-8', 'UTF-16')
+      # TODO 2 maps are inefficient here
     end.map(&:strip)
   end
 end
@@ -249,6 +252,7 @@ class Search
 
   def matches
     return @matches if @matches
+    # TODO chain of enumerators can probably be collapsed for slightly more efficiency
     @matches = choices.map do |choice|
       [choice, Score.score(choice, query)]
     end.select do |choice, score|
@@ -273,6 +277,9 @@ class Score
       return 1.0 if query.length == 0
       return 0.0 if choice.length == 0
 
+      # TODO move these out, they are calculated a lot
+      # maybe choices in `massage_choices`, query in `Search` somewhere
+      # move `query.each_char.to_a` to `Search` as well
       choice = choice.downcase
       query = query.downcase
 
@@ -287,6 +294,19 @@ class Score
     end
 
     # Find the length of the shortest substring matching the given characters.
+    # TODO this is where ALMOST HALF of execution time is spent
+    # regexp is slightly faster but also doesn't give the same results (shortest match)
+    # precalculating an array of indexes for all the chars doesn't seem to help (2x slower)
+    #
+    # call graph example:
+    # 45.24% (61.93%) <Class::Score>#compute_match_length [140790 calls, 140790 total]
+    #  17.04% (37.66%) Array#map [140790 calls, 140800 total]
+    #   10.60% (62.22%) <Class::Score>#find_end_of_match [182205 calls, 182205 total]
+    #     5.62% (52.99%) Array#each [182205 calls, 323189 total]
+    #  15.55% (34.38%) <Class::Score>#find_char_in_string [140790 calls, 140790 total]
+    #   2.82% (18.15%) String#index [322995 calls, 464149 total]
+    #  3.87% (8.56%) Enumerable#min [140790 calls, 140791 total]
+    #  1.23% (2.71%) Array#compact [140790 calls, 140790 total]
     def compute_match_length(string, chars)
       first_char, *rest = chars
       first_indexes = find_char_in_string(string, first_char)
